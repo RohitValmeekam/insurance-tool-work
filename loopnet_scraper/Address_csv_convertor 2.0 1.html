@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Address</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDJpECFECrlCJGhwE6nDY6DRvnWni8xFp0&libraries=places"></script>
+  </head>
+  <body class="m-8">
+    <h1 class="text-2xl font-bold mb-4">Upload</h1>
+    <input
+      type="file"
+      id="fileInput"
+      accept=".csv, .xlsx"
+      class="border p-2 mb-4"
+    />
+    <button
+      onclick="processFile()"
+      class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+    >
+      Process
+    </button>
+
+    <button
+      onclick="exportToCSV()"
+      class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+    >
+      Export CSV
+    </button>
+
+    <table
+      class="min-w-full mt-6 border-collapse border border-gray-400"
+      id="dataTable"
+    >
+      <thead>
+        <tr>
+          <th class="border border-gray-300 p-2 bg-gray-200">address</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">occupant</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">
+            occupant address
+          </th>
+          <th class="border border-gray-300 p-2 bg-gray-200">operation</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">coordinate</th>
+        </tr>
+      </thead>
+      <tbody id="results" class="text-sm"></tbody>
+    </table>
+
+    <script>
+      function exportToCSV() {
+        var dataTable = document.getElementById("dataTable");
+        var rows = dataTable.rows;
+        var csvContent = "data:text/csv;charset=utf-8,";
+
+        for (var i = 0; i < rows.length; i++) {
+          var cols = rows[i].querySelectorAll("td, th");
+          var rowData = [];
+
+          for (var j = 0; j < cols.length; j++) {
+            var text = cols[j].innerText
+              .replace(/(\r\n|\n|\r)/gm, " ")
+              .replace(/(\s+)/gm, " ");
+            rowData.push('"' + text + '"');
+          }
+
+          console.log("Row " + i + ": " + rowData.join(","));
+          csvContent += rowData.join(",") + "\r\n";
+        }
+
+        var encodedUri = encodeURI(csvContent);
+        var link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "exported_data.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      function processFile() {
+        var fileInput = document.getElementById("fileInput");
+        var file = fileInput.files[0];
+        var reader = new FileReader();
+
+        reader.onload = function (e) {
+          var contents = e.target.result;
+          processAddresses(contents);
+        };
+
+        reader.readAsText(file);
+      }
+
+      function processAddresses(contents) {
+        document.getElementById("results").innerHTML = "";
+
+        var addresses = contents.split("\n");
+        addresses.forEach(function (address) {
+          if (address.trim() !== "") {
+            getCoordinates(address.trim());
+          }
+        });
+        // addresses.forEach(function (address) {
+        //   getCoordinates(address);
+        // });
+      }
+
+      function getCoordinates(address) {
+        var geocoder = new google.maps.Geocoder();
+
+        geocoder.geocode({ address: address }, function (results, status) {
+          if (status === "OK") {
+            var location = results[0].geometry.location;
+            var lat = location.lat();
+            var lng = location.lng();
+            findStores(lat, lng, address);
+          } else {
+            console.error("Geocode 失败: " + status);
+          }
+        });
+      }
+
+      function findStores(lat, lng, address) {
+        var service = new google.maps.places.PlacesService(
+          document.createElement("div")
+        );
+        service.nearbySearch(
+          {
+            location: { lat: lat, lng: lng },
+            radius: 500,
+            type: ["store"],
+          },
+          function (results, status) {
+            if (status === google.maps.places.PlacesServiceStatus.OK) {
+              displayResults(address, lat, lng, results);
+            }
+          }
+        );
+      }
+
+      function displayResults(address, lat, lng, stores) {
+        var resultsTable = document.getElementById("results");
+
+        stores.forEach(function (store, index) {
+          var row = resultsTable.insertRow(-1);
+
+          var addressCell = row.insertCell(0);
+          addressCell.innerHTML =
+            index === 0
+              ? address +
+                "<br><span class='text-gray-600'>(" +
+                lat +
+                ", " +
+                lng +
+                ")</span>"
+              : "";
+          addressCell.className = "border p-2 align-top";
+
+          var storeNameCell = row.insertCell(1);
+          storeNameCell.innerHTML = "<div>" + store.name + "</div>";
+          storeNameCell.className = "border p-2 align-top";
+
+          var storeAddressCell = row.insertCell(2);
+          storeAddressCell.innerHTML =
+            "<div>" + (store.vicinity || "N/A") + "</div>";
+          storeAddressCell.className = "border p-2 align-top";
+
+          var storeTagsCell = row.insertCell(3);
+          storeTagsCell.innerHTML =
+            "<div>" + (store.types ? store.types.join(", ") : "N/A") + "</div>";
+          storeTagsCell.className = "border p-2 align-top";
+
+          var storeCoordsCell = row.insertCell(4);
+          storeCoordsCell.innerHTML =
+            "<div>" +
+            store.geometry.location.lat() +
+            ", " +
+            store.geometry.location.lng() +
+            "</div>";
+          storeCoordsCell.className = "border p-2 align-top";
+        });
+
+        if (stores.length === 0) {
+          var row = resultsTable.insertRow(-1);
+          var addressCell = row.insertCell(0);
+          addressCell.innerHTML =
+            address +
+            "<br><span class='text-gray-600'>(" +
+            lat +
+            ", " +
+            lng +
+            ")</span>";
+          addressCell.className = "border p-2";
+          row.insertCell(1);
+          row.insertCell(2);
+          row.insertCell(3);
+          row.insertCell(4);
+        }
+      }
+    </script>
+  </body>
+</html>
